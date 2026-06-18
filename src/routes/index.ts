@@ -1,12 +1,12 @@
 import express from "express";
 import { authRoutes } from "./auth.route.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
-
-import { prisma } from "../lib/prisma.js";
-import { AppError } from "../lib/app-error.js";
+import { roomRoutes } from "./room.routes.js";
+import { requireAuth } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
 router.use("/auth", authRoutes);
+
+router.use("/room", requireAuth, roomRoutes)
 
 export { router as rootRouter };
