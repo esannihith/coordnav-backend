@@ -3,6 +3,7 @@ import { AppError } from "../lib/app-error.js";
 import { signAccessToken } from "../lib/token.js";
 import { upsertUserFromGoogle } from "../services/user.service.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
+import { leaveRoom } from "../services/room.service.js";
 import {
   createRefreshToken,
   findValidRefreshToken,
@@ -66,6 +67,15 @@ const signout = async (req: Request, res: Response, next: NextFunction) => {
     const { refreshToken } = req.body;
     if (!refreshToken) {
       throw new AppError(400, "Refresh token is required");
+    }
+
+    const tokenInfo = await findValidRefreshToken(refreshToken).catch(() => null);
+    if (tokenInfo) {
+      try {
+        await leaveRoom(tokenInfo.userId);
+      } catch (error) {
+        // Ignore if user is not in any room
+      }
     }
 
     await revokeRefreshToken(refreshToken);
