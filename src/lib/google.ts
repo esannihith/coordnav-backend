@@ -12,9 +12,9 @@ const verifyGoogleIdToken = async (idToken: string): Promise<GoogleProfile> => {
       audience: env.GOOGLE_WEB_CLIENT_ID,
     });
     const payload = tokenInfo.getPayload();
-    if (!payload || !payload.email) {
+
+    if (!payload || !payload.email || !payload.email_verified)
       throw new AppError(401, "Invalid Google token");
-    }
 
     return {
       googleId: payload.sub,
@@ -22,7 +22,7 @@ const verifyGoogleIdToken = async (idToken: string): Promise<GoogleProfile> => {
       name: payload.name,
       picture: payload.picture,
     };
-  } catch (err) {
+  } catch {
     throw new AppError(401, "Invalid Google token");
   }
 };

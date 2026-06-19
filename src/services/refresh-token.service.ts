@@ -1,13 +1,14 @@
-import { generateRefreshToken, hashRefreshToken } from "../lib/token.js";
-import { env } from "../config/env.js";
-import { prisma } from "../lib/prisma.js";
+import { generateRefreshToken, hashRefreshToken } from "@/lib/token.js";
+import { env } from "@/config/env.js";
+import { prisma } from "@/lib/prisma.js";
 import type { RefreshToken } from "../../generated/prisma/client.js";
-import { AppError } from "../lib/app-error.js";
+import { AppError } from "@/lib/app-error.js";
 
 const createRefreshToken = async (userId: string): Promise<string> => {
   const rawToken = generateRefreshToken();
   const tokenHash = hashRefreshToken(rawToken);
-  const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_TTL_DAYS * 24 * 3600 * 1000);
+  const REFRESH_TOKEN_TTL_MS = env.REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
 
   await prisma.refreshToken.create({
     data: {
@@ -19,7 +20,9 @@ const createRefreshToken = async (userId: string): Promise<string> => {
   return rawToken;
 };
 
-const findValidRefreshToken = async (rawToken: string): Promise<RefreshToken | null> => {
+const validateRefreshToken = async (
+  rawToken: string,
+): Promise<RefreshToken | null> => {
   const tokenHash = hashRefreshToken(rawToken);
 
   const refreshToken = await prisma.refreshToken.findUnique({
@@ -28,12 +31,10 @@ const findValidRefreshToken = async (rawToken: string): Promise<RefreshToken | n
     },
   });
 
-  if (!refreshToken) {
-    return null;
-  }
+  if (!refreshToken) return null;
 
   // Branch 1: Revoked token (Reuse attack tripwire!)
-  if (refreshToken.revokedAt !== null) {
+  if (refreshToken.revokedAt) {
     await revokeAllForUser(refreshToken.userId);
     throw new AppError(401, "Token reuse detected");
   }
@@ -48,7 +49,6 @@ const findValidRefreshToken = async (rawToken: string): Promise<RefreshToken | n
 };
 
 const rotateRefreshToken = async (oldRow: RefreshToken): Promise<string> => {
-  // TODO: wrap in prisma.$transaction for atomicity
   await prisma.refreshToken.update({
     where: { id: oldRow.id },
     data: { revokedAt: new Date() },
@@ -74,7 +74,7 @@ const revokeAllForUser = async (userId: string): Promise<void> => {
 
 export {
   createRefreshToken,
-  findValidRefreshToken,
+  validateRefreshToken,
   rotateRefreshToken,
   revokeRefreshToken,
   revokeAllForUser,

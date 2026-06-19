@@ -3,19 +3,17 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "rootDir": "./",
     "outDir": "./dist",
-
     "types": ["node"],
-
+    "typeRoots": ["./node_modules/@types", "./src/types"],
     "strict": true,
-
     "sourceMap": true,
-
     "esModuleInterop": true,
-
     "skipLibCheck": true
   },
-  "include": ["./src/**/*", "./generated/*" ]
+  "include": ["./src/**/*", "./generated/*"]
 }

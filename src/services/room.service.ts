@@ -1,144 +1,191 @@
-import { prisma } from "../lib/prisma.js";
-import { AppError } from "../lib/app-error.js";
-import { Prisma } from "../../generated/prisma/client.js";
+import { prisma } from "@/lib/prisma.js";
+import { AppError } from "@/lib/app-error.js";
+import { Prisma, RoomMember } from "../../generated/prisma/client.js";
 
-const generateRoomCode = () => {
-  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ123456789';
-  let result = '';
+const generateRoomCode = (): string => {
+  const characters = "ACDEFHJKMNPQRTUVWXY3479";
+
+  let result = "";
+
   for (let i = 0; i < 6; i++) {
     result += characters.charAt(Math.floor(Math.random() * characters.length));
   }
+
   return result;
 };
 
-const getMembership = async (tx: Prisma.TransactionClient, userId: string) => {
-  return await tx.roomMember.findUnique({ where: { userId } });
+const getMembership = (
+  tx: Prisma.TransactionClient | typeof prisma,
+  userId: string,
+) => {
+  return tx.roomMember.findUnique({
+    where: { userId },
+  });
 };
 
-const removeMembership = async (tx: Prisma.TransactionClient, userId: string) => {
-  const membership = await getMembership(tx, userId);
+const removeMembership = async (
+  tx: Prisma.TransactionClient,
+  membership: RoomMember | null,
+) => {
   if (!membership) return null;
 
-  await tx.roomMember.delete({ where: { userId } });
+  await tx.roomMember.delete({
+    where: { id: membership.id },
+  });
 
-  const remaining = await tx.roomMember.count({ where: { roomId: membership.roomId } });
-  if (remaining === 0) {
-    await tx.room.delete({ where: { id: membership.roomId } });
+  const remainingMembers = await tx.roomMember.count({
+    where: {
+      roomId: membership.roomId,
+    },
+  });
+
+  if (remainingMembers === 0) {
+    await tx.room.delete({
+      where: {
+        id: membership.roomId,
+      },
+    });
   }
+
   return membership;
 };
 
-const getRoomMembers = async (tx: Prisma.TransactionClient, roomId: string) => {
-  const rows = await tx.roomMember.findMany({
-    where: { roomId },
-    include: { user: true },
-  });
-  return rows.map(m => ({
-    id: m.user.id,
-    name: m.user.name,
-    picture: m.user.picture,
-    joinedAt: m.joinedAt,
-  }));
-};
-
-const createMembership = async (tx: Prisma.TransactionClient, userId: string, roomId: string) => {
-  return await tx.roomMember.create({
+const createMembership = (
+  tx: Prisma.TransactionClient,
+  userId: string,
+  roomId: string,
+) => {
+  return tx.roomMember.create({
     data: {
       userId,
       roomId,
-    }
+    },
   });
 };
 
-const getRoomAndMembers = async (tx: Prisma.TransactionClient, roomId: string) => {
+const getRoomAndMembers = async (
+  tx: Prisma.TransactionClient | typeof prisma,
+  roomId: string,
+) => {
   const room = await tx.room.findUnique({
-    where: { id: roomId }
+    where: { id: roomId },
+    include: {
+      members: {
+        include: {
+          user: true,
+        },
+      },
+    },
   });
+
   if (!room || !room.isActive) {
     throw new AppError(404, "Room not found or inactive");
   }
-  const members = await getRoomMembers(tx, roomId);
-  return { room, members };
+
+  const members = room.members.map((member) => ({
+    id: member.user.id,
+    name: member.user.name,
+    picture: member.user.picture,
+    joinedAt: member.joinedAt,
+  }));
+
+  const { members: _, ...roomData } = room;
+
+  return {
+    room: roomData,
+    members,
+  };
 };
 
 const createRoom = async (userId: string, name: string) => {
-  return await prisma.$transaction(async (tx) => {
-    await removeMembership(tx, userId)
+  let roomCode = "";
+  let isUnique = false;
 
-    // 2. Generate a unique room code
-    let code = '';
-    let isCodeUnique = false;
-    while (!isCodeUnique) {
-      code = generateRoomCode();
-      const existingRoom = await tx.room.findUnique({
-        where: { roomCode: code }
-      });
-      isCodeUnique = existingRoom === null;
-    }
+  while (!isUnique) {
+    roomCode = generateRoomCode();
 
-    // 3. Create new room
+    const existingRoom = await prisma.room.findUnique({
+      where: {
+        roomCode,
+      },
+    });
+
+    isUnique = existingRoom === null;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const membership = await getMembership(tx, userId);
+
+    await removeMembership(tx, membership);
+
     const room = await tx.room.create({
       data: {
         name,
-        roomCode: code,
-      }
+        roomCode,
+      },
     });
 
-    // 4. Join the new room
     await createMembership(tx, userId, room.id);
 
-    return await getRoomAndMembers(tx, room.id);
+    return getRoomAndMembers(tx, room.id);
   });
 };
 
 const joinRoom = async (userId: string, roomCode: string) => {
-  return await prisma.$transaction(async (tx) => {
-    // 1. Find the room
+  return prisma.$transaction(async (tx) => {
     const room = await tx.room.findUnique({
-      where: { roomCode }
+      where: { roomCode },
     });
 
     if (!room || !room.isActive) {
       throw new AppError(404, "Room not found or inactive");
     }
 
-    const existingMembership = await getMembership(tx, userId);
+    const membership = await getMembership(tx, userId);
 
-    if (existingMembership && existingMembership.roomId === room.id ) {
-      return await getRoomAndMembers(tx, room.id);
+    if (membership && membership.roomId === room.id) {
+      return getRoomAndMembers(tx, room.id);
     }
 
-    await removeMembership(tx, userId);
+    await removeMembership(tx, membership);
+
     await createMembership(tx, userId, room.id);
 
-    return await getRoomAndMembers(tx, room.id);
+    return getRoomAndMembers(tx, room.id);
   });
 };
 
 const leaveRoom = async (userId: string) => {
-  return await prisma.$transaction(async (tx) => {
-    const membership = await removeMembership(tx, userId);
+  return prisma.$transaction(async (tx) => {
+    const membership = await getMembership(tx, userId);
+
     if (!membership) {
       throw new AppError(404, "Room membership not found");
     }
 
-    return { left: true };
+    await removeMembership(tx, membership);
+
+    return {
+      left: true,
+    };
   });
 };
 
 const getCurrentRoom = async (userId: string) => {
-  return await prisma.$transaction(async (tx) => {
-    const membership = await getMembership(tx, userId);
-    if (!membership) {
-      throw new AppError(404, "User is not in any room");
-    }
-    return await getRoomAndMembers(tx, membership.roomId);
-  });
+  const membership = await getMembership(prisma, userId);
+
+  if (!membership) {
+    throw new AppError(404, "User is not in any room");
+  }
+
+  return getRoomAndMembers(prisma, membership.roomId);
 };
 
 export {
   createRoom,
   joinRoom,
   leaveRoom,
-  getCurrentRoom
-}
+  getCurrentRoom,
+  getRoomAndMembers,
+  getMembership,
+};
