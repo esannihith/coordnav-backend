@@ -5,6 +5,7 @@ import { upsertUserFromGoogle } from "../services/user.service.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import * as tokenService from "../services/refresh-token.service.js";
 
+
 const googleSignIn = async (
   req: Request,
   res: Response,
@@ -17,6 +18,7 @@ const googleSignIn = async (
 
     const payload = await verifyGoogleIdToken(idToken);
     const user = await upsertUserFromGoogle(payload);
+    await tokenService.revokeAllForUser(user.id, "SUPERSEDED");
     const refreshToken = await tokenService.createRefreshToken(user.id);
     const accessToken = signAccessToken({ userId: user.id });
 

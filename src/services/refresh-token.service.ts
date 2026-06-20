@@ -1,7 +1,7 @@
 import { generateRefreshToken, hashRefreshToken } from "@/lib/token.js";
 import { env } from "@/config/env.js";
 import { prisma } from "@/lib/prisma.js";
-import type { RefreshToken } from "../../generated/prisma/client.js";
+import type { RefreshToken, RevocationReason } from "../../generated/prisma/client.js";
 import { AppError } from "@/lib/app-error.js";
 
 const createRefreshToken = async (userId: string): Promise<string> => {
@@ -35,7 +35,13 @@ const validateRefreshToken = async (
 
   // Branch 1: Revoked token (Reuse attack tripwire!)
   if (refreshToken.revokedAt) {
-    await revokeAllForUser(refreshToken.userId);
+    if (
+      refreshToken.reason === "SUPERSEDED" ||
+      refreshToken.reason === "LOGOUT"
+    ) {
+      return null;
+    }
+    await revokeAllForUser(refreshToken.userId, "REUSE");
     throw new AppError(401, "Token reuse detected");
   }
 
@@ -51,7 +57,7 @@ const validateRefreshToken = async (
 const rotateRefreshToken = async (oldRow: RefreshToken): Promise<string> => {
   await prisma.refreshToken.update({
     where: { id: oldRow.id },
-    data: { revokedAt: new Date() },
+    data: { revokedAt: new Date(), reason: "ROTATED" },
   });
   return createRefreshToken(oldRow.userId);
 };
@@ -61,14 +67,17 @@ const revokeRefreshToken = async (rawToken: string): Promise<void> => {
 
   await prisma.refreshToken.updateMany({
     where: { tokenHash, revokedAt: null },
-    data: { revokedAt: new Date() },
+    data: { revokedAt: new Date(), reason: "LOGOUT" },
   });
 };
 
-const revokeAllForUser = async (userId: string): Promise<void> => {
+const revokeAllForUser = async (
+  userId: string,
+  reason: RevocationReason = "LOGOUT",
+): Promise<void> => {
   await prisma.refreshToken.updateMany({
     where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
+    data: { revokedAt: new Date(), reason },
   });
 };
 

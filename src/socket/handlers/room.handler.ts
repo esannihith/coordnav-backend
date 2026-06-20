@@ -42,20 +42,6 @@ export const roomEvents = (io: Server, socket: Socket): void => {
           joinedAt: new Date().toISOString(),
         });
       }
-
-      // Broadcast the user's online presence to other members in the room
-      socket.to(roomId).emit("presence:update", { userId, online: true });
-
-      // Retrieve all sockets currently active in the room
-      const sockets = await io.in(roomId).fetchSockets();
-
-      // Map to user IDs, filtering out the joining user's own ID (standard practice)
-      const onlineUserIds = sockets
-        .map((s) => s.data.userId)
-        .filter((id): id is string => typeof id === "string" && id !== userId);
-
-      // Send the list of other online members to the joiner
-      socket.emit("presence:list", onlineUserIds);
     } catch (error: any) {
       socket.emit("room:error", {
         message: error.message || "Failed to join room",
@@ -85,17 +71,6 @@ export const roomEvents = (io: Server, socket: Socket): void => {
       socket.emit("room:error", {
         message: error.message || "Failed to leave room",
       });
-    }
-  });
-
-  // Handle connection closure
-  socket.on("disconnect", () => {
-    const roomId = socket.data.roomId;
-    const userId = socket.data.userId;
-
-    // If the user was actively in a room, broadcast their departure on disconnect
-    if (roomId && userId) {
-      socket.to(roomId).emit("presence:update", { userId, online: false });
     }
   });
 };
