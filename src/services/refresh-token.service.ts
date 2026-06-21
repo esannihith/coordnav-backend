@@ -81,10 +81,19 @@ const revokeAllForUser = async (
   });
 };
 
+const getUserIdFromToken = async (rawToken: string): Promise<string | null> => {
+  const tokenHash = hashRefreshToken(rawToken);
+  const record = await prisma.refreshToken.findUnique({
+    where: { tokenHash },
+  });
+  return record ? record.userId : null;
+};
+
 export {
   createRefreshToken,
   validateRefreshToken,
   rotateRefreshToken,
   revokeRefreshToken,
   revokeAllForUser,
+  getUserIdFromToken,
 };

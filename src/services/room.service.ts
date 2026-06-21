@@ -167,6 +167,7 @@ const leaveRoom = async (userId: string) => {
 
     return {
       left: true,
+      roomId: membership.roomId,
     };
   });
 };

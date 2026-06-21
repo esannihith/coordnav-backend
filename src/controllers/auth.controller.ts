@@ -4,6 +4,9 @@ import { signAccessToken } from "../lib/token.js";
 import { upsertUserFromGoogle } from "../services/user.service.js";
 import { verifyGoogleIdToken } from "../lib/google.js";
 import * as tokenService from "../services/refresh-token.service.js";
+import * as RoomService from "../services/room.service.js";
+import { notifyRosterChanged } from "../socket/notifier.js";
+import { prisma } from "../lib/prisma.js";
 
 
 const googleSignIn = async (
@@ -66,7 +69,22 @@ const signout = async (req: Request, res: Response, next: NextFunction) => {
     const { refreshToken } = req.body;
     if (!refreshToken) throw new AppError(400, "Refresh token is required");
 
+    const userId = await tokenService.getUserIdFromToken(refreshToken);
+    let roomIdToNotify: string | null = null;
+
+    if (userId) {
+      const membership = await RoomService.getMembership(prisma, userId);
+      if (membership) {
+        roomIdToNotify = membership.roomId;
+        await RoomService.leaveRoom(userId);
+      }
+    }
+
     await tokenService.revokeRefreshToken(refreshToken);
+
+    if (roomIdToNotify) {
+      notifyRosterChanged(roomIdToNotify);
+    }
 
     res.status(200).json({
       message: "Logged out successfully",

@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { AppError } from "@/lib/app-error.js";
 import * as RoomService from "@/services/room.service.js";
+import { notifyRosterChanged } from "../socket/notifier.js";
+
 
 const createRoom = async (req: Request, res: Response) => {
   const userId = req.userId as string;
@@ -38,6 +40,7 @@ const joinRoom = async (req: Request, res: Response) => {
   if (roomCode.length !== 6) throw new AppError(400, "Room code is invalid");
 
   const { room, members } = await RoomService.joinRoom(userId, roomCode);
+  notifyRosterChanged(room.id);
   res.status(200).json({
     data: {
       room,
@@ -49,6 +52,7 @@ const joinRoom = async (req: Request, res: Response) => {
 const leaveRoom = async (req: Request, res: Response) => {
   const userId = req.userId as string;
   const result = await RoomService.leaveRoom(userId);
+  notifyRosterChanged(result.roomId);
   res.status(200).json({
     data: result,
   });

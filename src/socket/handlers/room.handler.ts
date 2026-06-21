@@ -1,21 +1,19 @@
 import { Server, Socket } from "socket.io";
 import * as roomService from "@/services/room.service.js";
 import { prisma } from "@/lib/prisma.js";
+import * as Registry from "../presence.registry.js";
 
 export const roomEvents = (io: Server, socket: Socket): void => {
-  // Handle user joining a room
   socket.on("room:join", async (data) => {
     const userId = socket.data.userId;
     const roomId = data?.roomId;
 
-    // Guard: Verify required parameters are present
     if (!userId || !roomId) {
       socket.emit("room:error", { message: "Invalid request parameters" });
       return;
     }
 
     try {
-      // Guard: Verify that the user is actually a member of the room
       const membership = await roomService.getMembership(prisma, userId);
       if (!membership || membership.roomId !== roomId) {
         socket.emit("room:error", {
@@ -24,24 +22,13 @@ export const roomEvents = (io: Server, socket: Socket): void => {
         return;
       }
 
-      // Join the socket room and store the active roomId in the socket session
+      await Registry.addSocket(roomId, userId, socket.id);
+
       await socket.join(roomId);
       socket.data.roomId = roomId;
 
-      // Fetch user details to broadcast membership
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, name: true, picture: true },
-      });
-
-      if (user) {
-        socket.to(roomId).emit("room:member-joined", {
-          id: user.id,
-          name: user.name,
-          picture: user.picture,
-          joinedAt: new Date().toISOString(),
-        });
-      }
+      const locations = await Registry.getRoomLocations(roomId);
+      socket.emit("location:list", locations);
     } catch (error: any) {
       socket.emit("room:error", {
         message: error.message || "Failed to join room",
@@ -49,28 +36,41 @@ export const roomEvents = (io: Server, socket: Socket): void => {
     }
   });
 
-  // Handle user leaving a room
-  socket.on("room:leave", async () => {
+  // Handle location update from client
+  socket.on("location:update", async (data) => {
     const userId = socket.data.userId;
     const roomId = socket.data.roomId;
+    const lat = data?.lat;
+    const lng = data?.lng;
 
-    // Guard: Verify that the user was in a room
-    if (!userId || !roomId) {
-      socket.emit("room:error", { message: "Invalid request parameters" });
+    if (!userId || !roomId || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
       return;
     }
 
     try {
-      // Broadcast that the member left the room
-      socket.to(roomId).emit("room:member-left", { userId });
+      await Registry.setLocation(roomId, userId, lat, lng);
 
-      // Leave the socket room and clear the active roomId session key
-      await socket.leave(roomId);
-      socket.data.roomId = undefined;
-    } catch (error: any) {
-      socket.emit("room:error", {
-        message: error.message || "Failed to leave room",
+      socket.to(roomId).emit("location:update", {
+        userId,
+        lat,
+        lng,
+        updatedAt: new Date().toISOString(),
       });
+    } catch (error: any) {
+      console.error("Failed to update location:", error);
+    }
+  });
+
+  socket.on("disconnect", async () => {
+    const roomId = socket.data.roomId;
+    const userId = socket.data.userId;
+
+    if (roomId && userId) {
+      try {
+        await Registry.removeSocket(roomId, userId, socket.id);
+      } catch (error: any) {
+        console.error("Error handling disconnect presence cleanup:", error);
+      }
     }
   });
 };
