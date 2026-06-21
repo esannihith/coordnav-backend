@@ -28,7 +28,8 @@ export const roomEvents = (io: Server, socket: Socket): void => {
       socket.data.roomId = roomId;
 
       const locations = await Registry.getRoomLocations(roomId);
-      socket.emit("location:list", locations);
+      const filtered = locations.filter((loc) => loc.userId !== userId);
+      socket.emit("location:list", filtered);
     } catch (error: any) {
       socket.emit("room:error", {
         message: error.message || "Failed to join room",
@@ -60,6 +61,23 @@ export const roomEvents = (io: Server, socket: Socket): void => {
       console.error("Failed to update location:", error);
     }
   });
+
+  socket.on("location:share:stop", async () => {
+    const userId = socket.data.userId;
+    const roomId = socket.data.roomId;
+
+    if (!userId || !roomId) {
+      return;
+    }
+
+    try {
+      await Registry.clearLocation(roomId, userId);
+      socket.to(roomId).emit("location:share:stopped", { userId });
+    } catch (error: any) {
+      console.error("Failed to stop location sharing:", error);
+    }
+  });
+
 
   socket.on("disconnect", async () => {
     const roomId = socket.data.roomId;

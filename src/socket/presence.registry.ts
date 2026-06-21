@@ -74,6 +74,23 @@ export const setLocation = async (
   user.updatedAt = new Date();
 };
 
+// Clears user location coordinates.
+export const clearLocation = async (
+  roomId: string,
+  userId: string,
+): Promise<void> => {
+  const room = registry.get(roomId);
+  if (!room) return;
+
+  const user = room.get(userId);
+  if (!user) return;
+
+  delete user.lat;
+  delete user.lng;
+  delete user.updatedAt;
+};
+
+
 // Returns active user locations in a room.
 export const getRoomLocations = async (
   roomId: string,
