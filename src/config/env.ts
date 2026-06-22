@@ -11,6 +11,7 @@ function required(name: string): string {
 export const env = {
   DATABASE_URL: required("DATABASE_URL"),
   GOOGLE_WEB_CLIENT_ID: required("GOOGLE_WEB_CLIENT_ID"),
+  GOOGLE_PLACES_API_KEY: required("GOOGLE_PLACES_API_KEY"),
   JWT_ACCESS_SECRET: required("JWT_ACCESS_SECRET"),
   ACCESS_TOKEN_TTL: required("ACCESS_TOKEN_TTL"),
   REFRESH_TOKEN_TTL_DAYS: Number(required("REFRESH_TOKEN_TTL_DAYS")),
