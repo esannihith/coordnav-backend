@@ -22,6 +22,18 @@ export const roomEvents = (io: Server, socket: Socket): void => {
         return;
       }
 
+      // Single active session per user: a newer socket taking over the room
+      // nudges any pre-existing sockets to re-validate (advisory only — the
+      // authoritative logout is the superseded refresh token failing on the old
+      // device). We do NOT force-disconnect here; the old client re-validates and
+      // logs itself out, avoiding a reconnect ping-pong while access tokens live.
+      const existingSocketIds = Registry.getUserSocketIds(roomId, userId);
+      for (const oldSocketId of existingSocketIds) {
+        if (oldSocketId !== socket.id) {
+          io.to(oldSocketId).emit("session:superseded");
+        }
+      }
+
       await Registry.addSocket(roomId, userId, socket.id);
 
       await socket.join(roomId);

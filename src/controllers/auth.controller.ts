@@ -25,11 +25,35 @@ const googleSignIn = async (
     const refreshToken = await tokenService.createRefreshToken(user.id);
     const accessToken = signAccessToken({ userId: user.id });
 
+    // Session bootstrap: return current room state so the client routes in a
+    // single round-trip (no separate loadCurrentRoom call after sign-in).
+    let room = null;
+    let members: Awaited<
+      ReturnType<typeof RoomService.getRoomAndMembers>
+    >["members"] = [];
+    const membership = await RoomService.getMembership(prisma, user.id);
+    if (membership) {
+      try {
+        const snapshot = await RoomService.getRoomAndMembers(
+          prisma,
+          membership.roomId,
+        );
+        room = snapshot.room;
+        members = snapshot.members;
+      } catch {
+        // Stale membership pointing at a missing/inactive room — treat as no room.
+        room = null;
+        members = [];
+      }
+    }
+
     res.status(200).json({
       data: {
         user,
         accessToken,
         refreshToken,
+        room,
+        members,
       },
     });
   } catch (error) {

@@ -116,7 +116,9 @@ const createRoom = async (userId: string, name: string) => {
   return prisma.$transaction(async (tx) => {
     const membership = await getMembership(tx, userId);
 
-    await removeMembership(tx, membership);
+    if (membership) {
+      throw new AppError(409, "You're already in a room", "ALREADY_IN_ROOM");
+    }
 
     const room = await tx.room.create({
       data: {
@@ -143,11 +145,14 @@ const joinRoom = async (userId: string, roomCode: string) => {
 
     const membership = await getMembership(tx, userId);
 
-    if (membership && membership.roomId === room.id) {
-      return getRoomAndMembers(tx, room.id);
+    if (membership) {
+      // Idempotent re-join of the same room; otherwise reject without
+      // destroying the existing membership (switching requires explicit leave).
+      if (membership.roomId === room.id) {
+        return getRoomAndMembers(tx, room.id);
+      }
+      throw new AppError(409, "You're already in a room", "ALREADY_IN_ROOM");
     }
-
-    await removeMembership(tx, membership);
 
     await createMembership(tx, userId, room.id);
 

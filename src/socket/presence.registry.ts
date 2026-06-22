@@ -8,6 +8,15 @@ interface UserPresence {
 // Registry layout: roomId -> Map<userId, UserPresence>
 const registry = new Map<string, Map<string, UserPresence>>();
 
+// Returns the socket ids currently registered for a user in a room (empty if none).
+export const getUserSocketIds = (
+  roomId: string,
+  userId: string,
+): string[] => {
+  const user = registry.get(roomId)?.get(userId);
+  return user ? Array.from(user.sockets) : [];
+};
+
 // Adds a socket to the registry. Returns true if this is the user's first socket (going online).
 export const addSocket = async (
   roomId: string,
