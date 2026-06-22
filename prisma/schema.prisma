@@ -15,6 +15,7 @@ model User {
   picture        String?
   roomMembership RoomMember?
   refreshTokens  RefreshToken[]
+  messages       Message[]
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
@@ -43,7 +44,8 @@ model Room {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  members RoomMember[]
+  members  RoomMember[]
+  messages Message[]
 
   @@map("rooms")
 }
@@ -59,6 +61,27 @@ model RoomMember {
 
   @@index([roomId])
   @@map("room_members")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  roomId    String      @map("room_id")
+  senderId  String      @map("sender_id")
+  kind      MessageKind
+  text      String?
+  place     Json?
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  room   Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@map("messages")
+}
+
+enum MessageKind {
+  TEXT
+  PLACE
 }
 
 enum RevocationReason {

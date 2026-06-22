@@ -1,8 +1,9 @@
 import "socket.io";
 
 declare module "socket.io" {
-  interface SockerData {
+  interface SocketData {
     userId?: string;
+    roomId?: string;
   }
 }
 
