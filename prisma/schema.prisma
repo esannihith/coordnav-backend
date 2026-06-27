@@ -44,10 +44,24 @@ model Room {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  members  RoomMember[]
-  messages Message[]
+  members     RoomMember[]
+  messages    Message[]
+  destination RoomDestination?
 
   @@map("rooms")
+}
+
+model RoomDestination {
+  roomId           String @id @map("room_id")
+  placeId          String @map("place_id")
+  name             String
+  formattedAddress String @map("formatted_address")
+  lat              Float
+  lng              Float
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@map("room_destinations")
 }
 
 model RoomMember {

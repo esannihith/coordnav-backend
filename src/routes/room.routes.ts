@@ -4,6 +4,7 @@ import {
   joinRoom,
   leaveRoom,
   currentRoom,
+  updateDestination,
 } from "@/controllers/room.controller.js";
 import { getMessages } from "@/controllers/chat.controller.js";
 
@@ -13,6 +14,7 @@ router.post("/", createRoom);
 router.post("/join", joinRoom);
 router.post("/leave", leaveRoom);
 router.get("/", currentRoom);
+router.patch("/destination", updateDestination);
 router.get("/messages", getMessages);
 
 export { router as roomRoutes };

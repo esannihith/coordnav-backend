@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma.js";
 import { AppError } from "@/lib/app-error.js";
 import { Prisma, RoomMember } from "../../generated/prisma/client.js";
+import { RoomDestinationInput } from "@/types/room.type.js";
 
 const generateRoomCode = (): string => {
   const characters = "ACDEFHJKMNPQRTUVWXY3479";
@@ -70,6 +71,15 @@ const getRoomAndMembers = async (
   const room = await tx.room.findUnique({
     where: { id: roomId },
     include: {
+      destination: {
+        select: {
+          placeId: true,
+          name: true,
+          formattedAddress: true,
+          lat: true,
+          lng: true,
+        },
+      },
       members: {
         include: {
           user: true,
@@ -103,7 +113,11 @@ const isUniqueConstraintError = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === "P2002";
 
-const createRoom = async (userId: string, name: string) => {
+const createRoom = async (
+  userId: string,
+  name: string,
+  destination?: RoomDestinationInput | null,
+) => {
   // Retry on the (astronomically rare) room-code collision instead of a
   // pre-check loop — the unique constraint is the source of truth, and the
   // membership check happens inside the transaction so an already-in-a-room
@@ -123,6 +137,11 @@ const createRoom = async (userId: string, name: string) => {
           data: {
             name,
             roomCode,
+            destination: destination
+              ? {
+                  create: destination,
+                }
+              : undefined,
           },
         });
 
@@ -198,6 +217,45 @@ const getCurrentRoom = async (userId: string) => {
   return getRoomAndMembers(prisma, membership.roomId);
 };
 
+const updateDestination = async (
+  userId: string,
+  destination: RoomDestinationInput | null,
+) => {
+  return prisma.$transaction(async (tx) => {
+    const membership = await getMembership(tx, userId);
+
+    if (!membership) {
+      throw new AppError(404, "User is not in any room");
+    }
+
+    // Validate that the room is still active before mutating its destination.
+    await getRoomAndMembers(tx, membership.roomId);
+
+    if (destination) {
+      await tx.roomDestination.upsert({
+        where: { roomId: membership.roomId },
+        create: {
+          roomId: membership.roomId,
+          ...destination,
+        },
+        update: destination,
+      });
+    } else {
+      await tx.roomDestination.deleteMany({
+        where: { roomId: membership.roomId },
+      });
+    }
+
+    // Relation writes do not advance Room.updatedAt automatically.
+    await tx.room.update({
+      where: { id: membership.roomId },
+      data: { updatedAt: new Date() },
+    });
+
+    return getRoomAndMembers(tx, membership.roomId);
+  });
+};
+
 export {
   createRoom,
   joinRoom,
@@ -205,4 +263,5 @@ export {
   getCurrentRoom,
   getRoomAndMembers,
   getMembership,
+  updateDestination,
 };
