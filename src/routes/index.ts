@@ -3,13 +3,16 @@ import { authRoutes } from "./auth.route.js";
 import { roomRoutes } from "./room.routes.js";
 import { placesRoutes } from "./places.routes.js";
 import { requireAuth } from "@/middlewares/auth.middleware.js";
+import { authLimiter, placesLimiter } from "@/middlewares/rate-limit.middleware.js";
 
 const router = express.Router();
 
-router.use("/auth", authRoutes);
+router.use("/auth", authLimiter, authRoutes);
 
 router.use("/room", requireAuth, roomRoutes);
 
-router.use("/places", placesRoutes);
+// Public by design (Google free tier; only room features need auth) —
+// rate-limited so the billed Places key can't be farmed.
+router.use("/places", placesLimiter, placesRoutes);
 
 export { router as rootRouter };

@@ -1,0 +1,9 @@
+node_modules
+generated
+dist
+.env
+.env.*
+.git
+.github
+infra
+*.md
