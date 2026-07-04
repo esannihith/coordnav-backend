@@ -1,4 +1,0 @@
-{$DOMAIN} {
-	# Automatic HTTPS via Let's Encrypt; WebSocket upgrades proxied natively.
-	reverse_proxy app:8000
-}
