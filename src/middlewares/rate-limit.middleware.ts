@@ -16,3 +16,12 @@ export const placesLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Same policy as places (public, billed key behind it), separate bucket so
+// heavy autocomplete typing can't starve route fetches or vice versa.
+export const directionsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
