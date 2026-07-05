@@ -1,59 +1,102 @@
+import { env } from "@/config/env.js";
 import { AppError } from "@/lib/app-error.js";
-import { buildDirectionsUrl } from "@/utils/directions.util.js";
 import {
-  GoogleDirectionsResponse,
+  toRoutesApiWaypoint,
+  parseDurationSeconds,
+  formatDuration,
+  formatDistance,
+} from "@/utils/directions.util.js";
+import {
+  RoutesApiResponse,
   RouteOption,
   TravelMode,
 } from "@/types/directions.type.js";
+
+const COMPUTE_ROUTES_URL =
+  "https://routes.googleapis.com/directions/v2:computeRoutes";
+
+const TRAVEL_MODE_MAP: Record<TravelMode, string> = {
+  driving: "DRIVE",
+  walking: "WALK",
+  bicycling: "BICYCLE",
+  transit: "TRANSIT",
+};
+
+const BASE_FIELD_MASK = [
+  "routes.description",
+  "routes.duration",
+  "routes.distanceMeters",
+  "routes.polyline.encodedPolyline",
+  "routes.viewport",
+].join(",");
 
 const getRoutes = async (
   origin: string,
   destination: string,
   mode: TravelMode,
 ): Promise<RouteOption[]> => {
-  const url = buildDirectionsUrl({
-    origin,
-    destination,
-    mode,
-    alternatives: "true",
+  const isDriving = mode === "driving";
+
+  // routeToken exists only for DRIVE (and TWO_WHEELER) with a traffic-aware
+  // routing preference; requesting it for other modes is an API error.
+  const fieldMask = isDriving
+    ? `${BASE_FIELD_MASK},routes.routeToken`
+    : BASE_FIELD_MASK;
+
+  const body: Record<string, unknown> = {
+    origin: toRoutesApiWaypoint(origin),
+    destination: toRoutesApiWaypoint(destination),
+    travelMode: TRAVEL_MODE_MAP[mode],
+    computeAlternativeRoutes: true,
+    units: "METRIC",
+  };
+  if (isDriving) body.routingPreference = "TRAFFIC_AWARE";
+
+  const response = await fetch(COMPUTE_ROUTES_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": env.GOOGLE_PLACES_API_KEY,
+      "X-Goog-FieldMask": fieldMask,
+    },
+    body: JSON.stringify(body),
   });
 
-  const response = await fetch(url);
+  const data = (await response.json().catch(() => null)) as
+    | RoutesApiResponse
+    | null;
 
   if (!response.ok) {
-    throw new AppError(502, "Failed to reach Google Directions API");
-  }
-
-  const data = (await response.json()) as GoogleDirectionsResponse;
-
-  if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
     throw new AppError(
       502,
-      data.error_message || `Google Directions API error: ${data.status}`,
+      data?.error?.message || `Google Routes API error (HTTP ${response.status})`,
     );
   }
 
-  return (data.routes ?? []).map((route, index) => {
-    // Requests are origin->destination with no waypoints, so a single leg is
-    // expected; summing keeps totals correct if waypoints are ever added.
-    const durationSeconds = route.legs.reduce(
-      (sum, leg) => sum + leg.duration.value,
-      0,
-    );
-    const distanceMeters = route.legs.reduce(
-      (sum, leg) => sum + leg.distance.value,
-      0,
-    );
+  // No route between the points comes back as 200 with no routes array.
+  return (data?.routes ?? []).map((route, index) => {
+    const durationSeconds = parseDurationSeconds(route.duration);
+    const distanceMeters = route.distanceMeters ?? 0;
 
     return {
       id: String(index),
-      summary: route.summary || `Route ${index + 1}`,
+      summary: route.description || `Route ${index + 1}`,
       durationSeconds,
-      durationText: route.legs[0]?.duration.text ?? "",
+      durationText: formatDuration(durationSeconds),
       distanceMeters,
-      distanceText: route.legs[0]?.distance.text ?? "",
-      encodedPolyline: route.overview_polyline.points,
-      bounds: route.bounds,
+      distanceText: formatDistance(distanceMeters),
+      encodedPolyline: route.polyline?.encodedPolyline ?? "",
+      bounds: {
+        northeast: {
+          lat: route.viewport?.high?.latitude ?? 0,
+          lng: route.viewport?.high?.longitude ?? 0,
+        },
+        southwest: {
+          lat: route.viewport?.low?.latitude ?? 0,
+          lng: route.viewport?.low?.longitude ?? 0,
+        },
+      },
+      ...(route.routeToken ? { routeToken: route.routeToken } : {}),
     };
   });
 };
